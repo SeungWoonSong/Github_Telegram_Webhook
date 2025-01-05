@@ -9,6 +9,7 @@ load_dotenv()
 # Telegram Bot Token
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # 수신할 채팅방 ID (봇과 대화 후 @get_id_bot 사용 가능)
+TELEGRAM_WORK_CHAT_ID = os.getenv("TELEGRAM_WORK_CHAT_ID")
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("환경변수 TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID가 설정되어 있지 않습니다.")
@@ -17,12 +18,6 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
 def parse_push_event(data):
     """
     Push 이벤트 메시지 생성
-    
-    표시 정보:
-    - 레포지토리 이름
-    - Push 한 사용자
-    - 첫 번째 커밋 내용
-    - 추가 커밋 수 (있는 경우)
     """
     repository = data.get('repository', {})
     pusher = data.get('pusher', {})
@@ -36,20 +31,18 @@ def parse_push_event(data):
         first_commit = commits[0]
         commit_message = first_commit.get('message', '')
         commit_url = first_commit.get('url', '')
-        commit_info = f"[커밋 보기]({commit_url})"
         remaining = len(commits) - 1
         remaining_info = f"\n추가 커밋 {remaining}개" if remaining > 0 else ""
     else:
         commit_message = "커밋 없음"
-        commit_info = ""
+        commit_url = ""
         remaining_info = ""
 
     parsed_message = (
-        f"🔄 *Push*\n"
-        f"*{repo_name}*\n"
-        f"by {pusher_name}\n"
-        f"{commit_message}\n"
-        f"{commit_info}{remaining_info}"
+        f"📦 *{commit_message}*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {pusher_name}\n"
+        f"링크 : [커밋 보기]({commit_url}){remaining_info}"
     )
 
     return parsed_message
@@ -58,17 +51,6 @@ def parse_push_event(data):
 def parse_pull_request_event(data):
     """
     Pull Request 이벤트 메시지 생성
-    
-    지원하는 액션:
-    - opened: PR 생성 🟢
-    - closed: PR 닫힘 🔴
-    - reopened: PR 재오픈 🔄
-    
-    표시 정보:
-    - PR 번호
-    - 레포지토리 이름
-    - PR 제목
-    - 작성자
     """
     action = data.get('action', '')
     pr = data.get('pull_request', {})
@@ -84,17 +66,16 @@ def parse_pull_request_event(data):
     html_url = pr.get('html_url', '')
 
     action_emoji = {
-        'opened': '🟢',
-        'closed': '🔴',
+        'opened': '💫',
+        'closed': '🔒',
         'reopened': '🔄'
     }.get(action, '')
 
     parsed_message = (
-        f"{action_emoji} *PR #{pr_number}*\n"
-        f"*{repo_name}*\n"
-        f"{title}\n"
-        f"by {user}\n"
-        f"[PR 보기]({html_url})"
+        f"{action_emoji} *{title}*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [PR #{pr_number}]({html_url})"
     )
 
     return parsed_message
@@ -105,24 +86,25 @@ def parse_issues_event(data):
     Issue 이벤트 메시지 생성
     
     지원하는 액션:
-    - opened: 이슈 생성 🟢
-    - closed: 이슈 닫힘 🔴
-    - reopened: 이슈 재오픈 🔄
+    - opened: 이슈 생성 (🟢)
+    - closed: 이슈 닫힘 (🔴)
+    - reopened: 이슈 재오픈 (🔄)
+    - deleted: 이슈 삭제 (🗑️)
     
-    표시 정보:
-    - 이슈 번호
-    - 레포지토리 이름
-    - 이슈 제목
-    - 작성자
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
     """
     action = data.get('action', '')
-    if action not in ['opened', 'closed', 'reopened']:
-        return None
-
     issue = data.get('issue', {})
+    
+    if action not in ['opened', 'closed', 'reopened', 'deleted']:
+        return None
+        
     repo = data.get('repository', {})
     repo_name = repo.get('full_name', '알 수 없음')
-    issue_number = issue.get('number', '?')
     title = issue.get('title', '제목 없음')
     user = issue.get('user', {}).get('login', '알 수 없음')
     html_url = issue.get('html_url', '')
@@ -130,15 +112,15 @@ def parse_issues_event(data):
     action_emoji = {
         'opened': '🟢',
         'closed': '🔴',
-        'reopened': '🔄'
+        'reopened': '🔄',
+        'deleted': '🗑️'
     }.get(action, '')
 
     parsed_message = (
-        f"{action_emoji} *Issue #{issue_number}*\n"
-        f"*{repo_name}*\n"
-        f"{title}\n"
-        f"by {user}\n"
-        f"[이슈 보기]({html_url})"
+        f"{action_emoji} *{title}*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [이슈 보기]({html_url})"
     )
 
     return parsed_message
@@ -148,28 +130,26 @@ def parse_issue_comment_event(data):
     """
     Issue 댓글 이벤트 메시지 생성
     
-    표시 정보:
-    - 이슈 번호
-    - 레포지토리 이름
-    - 이슈 제목
-    - 댓글 작성자
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
     """
-    issue = data.get('issue', {})
     comment = data.get('comment', {})
+    issue = data.get('issue', {})
     repo = data.get('repository', {})
     
     repo_name = repo.get('full_name', '알 수 없음')
-    issue_number = issue.get('number', '?')
-    title = issue.get('title', '제목 없음')
+    issue_title = issue.get('title', '제목 없음')
     user = comment.get('user', {}).get('login', '알 수 없음')
     html_url = comment.get('html_url', '')
 
     parsed_message = (
-        f"💬 *Comment on #{issue_number}*\n"
-        f"*{repo_name}*\n"
-        f"{title}\n"
-        f"by {user}\n"
-        f"[댓글 보기]({html_url})"
+        f"🗣️ *{issue_title}*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [댓글 보기]({html_url})"
     )
 
     return parsed_message
@@ -177,7 +157,13 @@ def parse_issue_comment_event(data):
 
 def parse_ping_event(data):
     """
-    ping 이벤트(웹훅 등록시 테스트)용 간단 응답
+    Ping 이벤트 메시지 생성 (웹훅 등록 테스트용)
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
     """
     zen = data.get('zen', '')
     hook_id = data.get('hook_id', '')
@@ -186,6 +172,61 @@ def parse_ping_event(data):
         f"메시지: {zen}\n"
         f"Hook ID: {hook_id}"
     )
+    return parsed_message
+
+
+def parse_pull_request_review_event(data):
+    """
+    Pull Request Review 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - submitted: 리뷰 제출 
+      - commented (💭): 일반 코멘트
+      - approved (✅): 승인
+      - changes_requested (❌): 변경 요청
+    - dismissed: 리뷰 철회 (🔄)
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    review = data.get('review', {})
+    pull_request = data.get('pull_request', {})
+    
+    if action not in ['submitted', 'dismissed']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    pr_title = pull_request.get('title', '제목 없음')
+    reviewer = review.get('user', {}).get('login', '알 수 없음')
+    review_url = review.get('html_url', '')
+    
+    # 리뷰 상태에 따른 이모지 결정
+    state = review.get('state', '')
+    if action == 'submitted':
+        action_emoji = {
+            'commented': '💭',
+            'approved': '✅',
+            'changes_requested': '❌'
+        }.get(state, '💭')
+    else:  # dismissed
+        action_emoji = '🔄'
+    
+    # 리뷰 내용
+    review_body = review.get('body', '').strip()
+    review_comment = f"\n코멘트 : {review_body}" if review_body else ""
+    
+    parsed_message = (
+        f"{action_emoji} *{pr_title}*\n"
+        f"레포 : {repo_name}\n"
+        f"리뷰어 : {reviewer}{review_comment}\n"
+        f"링크 : [리뷰 보기]({review_url})"
+    )
+
     return parsed_message
 
 
@@ -205,42 +246,73 @@ def parse_other_event(event_type, data):
     return parsed_message
 
 
+def send_telegram_message(message, is_issue=False):
+    """
+    텔레그램으로 메시지를 전송하는 함수
+    
+    Args:
+        message (str): 전송할 메시지
+        is_issue (bool): Issue 관련 메시지인지 여부
+    """
+    chat_id = TELEGRAM_CHAT_ID if is_issue else TELEGRAM_WORK_CHAT_ID
+    if not chat_id:
+        return
+        
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    requests.post(url, json=data)
+
+
 app = Flask(__name__)
 
-@app.route('/webhook', methods=['POST'])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    # GitHub에서 보내는 이벤트 타입
-    event_type = request.headers.get('X-GitHub-Event', 'unknown')
-    data = request.json  # GitHub에서 보낸 데이터 (dict 형태)
+    """
+    GitHub webhook 엔드포인트
+    
+    지원하는 이벤트:
+    - ping: 웹훅 등록 테스트
+    - push: 코드 푸시
+    - pull_request: PR 생성/수정/닫힘
+    - pull_request_review: PR 리뷰
+    - issues: 이슈 생성/수정/닫힘
+    - issue_comment: 이슈 댓글
+    """
+    event_type = request.headers.get("X-GitHub-Event")
+    data = request.json
 
-    # 이벤트 타입별로 분기 처리
-    if event_type == 'ping':
+    if event_type == "ping":
         message = parse_ping_event(data)
-    elif event_type == 'push':
+        if message:
+            send_telegram_message(message)
+    elif event_type == "push":
         message = parse_push_event(data)
-    elif event_type == 'pull_request':
+        if message:
+            send_telegram_message(message)
+    elif event_type == "pull_request":
         message = parse_pull_request_event(data)
-    elif event_type == 'issues':
+        if message:
+            send_telegram_message(message)
+    elif event_type == "pull_request_review":
+        message = parse_pull_request_review_event(data)
+        if message:
+            send_telegram_message(message)
+    elif event_type == "issues":
         message = parse_issues_event(data)
-    elif event_type == 'issue_comment':
+        if message:
+            send_telegram_message(message, is_issue=True)
+    elif event_type == "issue_comment":
         message = parse_issue_comment_event(data)
+        if message:
+            send_telegram_message(message, is_issue=True)
     else:
-        # 아직 별도 처리가 없는 이벤트들은 기본(기타) 처리
         message = parse_other_event(event_type, data)
-
-    # Telegram 메시지 보내기
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message
-    }
-    # 디버그용
-    print("===== Payload to Telegram =====")
-    print(payload)
-    print("===============================")
-
-    # 실제 텔레그램 전송
-    requests.post(telegram_url, json=payload)
+        if message:
+            send_telegram_message(message)
 
     return jsonify({"status": "success"})
 
