@@ -16,7 +16,13 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
 
 def parse_push_event(data):
     """
-    push 이벤트에 대한 메시지 파싱
+    Push 이벤트 메시지 생성
+    
+    표시 정보:
+    - 레포지토리 이름
+    - Push 한 사용자
+    - 첫 번째 커밋 내용
+    - 추가 커밋 수 (있는 경우)
     """
     repository = data.get('repository', {})
     pusher = data.get('pusher', {})
@@ -25,19 +31,25 @@ def parse_push_event(data):
     repo_name = repository.get('full_name', '알 수 없음')
     pusher_name = pusher.get('name', '알 수 없음')
 
-    commit_messages = []
-    for commit in commits:
-        message = commit.get('message', '')
-        commit_url = commit.get('url', '')
-        commit_messages.append(f"- {message} ({commit_url})")
-
-    commit_str = "\n".join(commit_messages) if commit_messages else "커밋이 없습니다."
+    # 첫 번째 커밋만 표시
+    if commits:
+        first_commit = commits[0]
+        commit_message = first_commit.get('message', '')
+        commit_url = first_commit.get('url', '')
+        commit_info = f"[커밋 보기]({commit_url})"
+        remaining = len(commits) - 1
+        remaining_info = f"\n추가 커밋 {remaining}개" if remaining > 0 else ""
+    else:
+        commit_message = "커밋 없음"
+        commit_info = ""
+        remaining_info = ""
 
     parsed_message = (
-        f" [Push 이벤트] \n"
-        f"레포지토리: {repo_name}\n"
-        f"푸시한 사람: {pusher_name}\n"
-        f"커밋 내용:\n{commit_str}"
+        f"🔄 *Push*\n"
+        f"*{repo_name}*\n"
+        f"by {pusher_name}\n"
+        f"{commit_message}\n"
+        f"{commit_info}{remaining_info}"
     )
 
     return parsed_message
@@ -45,106 +57,121 @@ def parse_push_event(data):
 
 def parse_pull_request_event(data):
     """
-    pull_request 이벤트에 대한 메시지 파싱
+    Pull Request 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - opened: PR 생성 🟢
+    - closed: PR 닫힘 🔴
+    - reopened: PR 재오픈 🔄
+    
+    표시 정보:
+    - PR 번호
+    - 레포지토리 이름
+    - PR 제목
+    - 작성자
     """
     action = data.get('action', '')
     pr = data.get('pull_request', {})
-    repository = data.get('repository', {})
+    
+    if action not in ['opened', 'closed', 'reopened']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    pr_number = pr.get('number', '?')
+    title = pr.get('title', '제목 없음')
+    user = pr.get('user', {}).get('login', '알 수 없음')
+    html_url = pr.get('html_url', '')
 
-    repo_name = repository.get('full_name', '알 수 없음')
-    pr_title = pr.get('title', '')
-    pr_number = pr.get('number', '')
-    pr_user = pr.get('user', {}).get('login', '알 수 없음')
-    pr_url = pr.get('html_url', '')
+    action_emoji = {
+        'opened': '🟢',
+        'closed': '🔴',
+        'reopened': '🔄'
+    }.get(action, '')
 
     parsed_message = (
-        f" [Pull Request 이벤트] \n"
-        f"레포지토리: {repo_name}\n"
-        f"액션: {action}\n"
-        f"PR 번호: #{pr_number}\n"
-        f"제목: {pr_title}\n"
-        f"작성자: {pr_user}\n"
-        f"URL: {pr_url}"
+        f"{action_emoji} *PR #{pr_number}*\n"
+        f"*{repo_name}*\n"
+        f"{title}\n"
+        f"by {user}\n"
+        f"[PR 보기]({html_url})"
     )
+
     return parsed_message
 
 
 def parse_issues_event(data):
     """
-    issues 이벤트에 대한 메시지 파싱
+    Issue 이벤트 메시지 생성
+    
     지원하는 액션:
-    - opened, closed, reopened: 이슈 열기/닫기/재열기
-    - assigned, unassigned: 이슈 할당/할당해제
-    - labeled, unlabeled: 라벨 추가/제거
-    - milestoned, demilestoned: 마일스톤 추가/제거
-    - locked, unlocked: 이슈 잠금/잠금해제
+    - opened: 이슈 생성 🟢
+    - closed: 이슈 닫힘 🔴
+    - reopened: 이슈 재오픈 🔄
+    
+    표시 정보:
+    - 이슈 번호
+    - 레포지토리 이름
+    - 이슈 제목
+    - 작성자
     """
     action = data.get('action', '')
+    if action not in ['opened', 'closed', 'reopened']:
+        return None
+
     issue = data.get('issue', {})
-    repository = data.get('repository', {})
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    issue_number = issue.get('number', '?')
+    title = issue.get('title', '제목 없음')
+    user = issue.get('user', {}).get('login', '알 수 없음')
+    html_url = issue.get('html_url', '')
 
-    repo_name = repository.get('full_name', '알 수 없음')
-    issue_title = issue.get('title', '')
-    issue_number = issue.get('number', '')
-    issue_user = issue.get('user', {}).get('login', '알 수 없음')
-    issue_url = issue.get('html_url', '')
+    action_emoji = {
+        'opened': '🟢',
+        'closed': '🔴',
+        'reopened': '🔄'
+    }.get(action, '')
 
-    # 기본 메시지 구성
     parsed_message = (
-        f" [Issues 이벤트] \n"
-        f"레포지토리: {repo_name}\n"
-        f"액션: {action}\n"
-        f"이슈 번호: #{issue_number}\n"
-        f"제목: {issue_title}\n"
-        f"작성자: {issue_user}\n"
-        f"URL: {issue_url}"
+        f"{action_emoji} *Issue #{issue_number}*\n"
+        f"*{repo_name}*\n"
+        f"{title}\n"
+        f"by {user}\n"
+        f"[이슈 보기]({html_url})"
     )
-
-    # 액션별 추가 정보
-    if action in ['assigned', 'unassigned']:
-        assignee = data.get('assignee', {}).get('login', '알 수 없음')
-        parsed_message += f"\n담당자: {assignee}"
-    
-    elif action in ['labeled', 'unlabeled']:
-        label = data.get('label', {}).get('name', '알 수 없음')
-        parsed_message += f"\n라벨: {label}"
-    
-    elif action in ['milestoned', 'demilestoned']:
-        milestone = issue.get('milestone', {}).get('title', '알 수 없음')
-        parsed_message += f"\n마일스톤: {milestone}"
-    
-    elif action in ['locked', 'unlocked']:
-        lock_reason = issue.get('active_lock_reason', '이유 없음')
-        if action == 'locked':
-            parsed_message += f"\n잠금 이유: {lock_reason}"
 
     return parsed_message
 
 
 def parse_issue_comment_event(data):
     """
-    issue_comment 이벤트에 대한 메시지 파싱
+    Issue 댓글 이벤트 메시지 생성
+    
+    표시 정보:
+    - 이슈 번호
+    - 레포지토리 이름
+    - 이슈 제목
+    - 댓글 작성자
     """
-    action = data.get('action', '')
-    comment = data.get('comment', {})
     issue = data.get('issue', {})
-    repository = data.get('repository', {})
-
-    repo_name = repository.get('full_name', '알 수 없음')
-    issue_number = issue.get('number', '')
-    comment_user = comment.get('user', {}).get('login', '알 수 없음')
-    comment_body = comment.get('body', '')
-    comment_url = comment.get('html_url', '')
+    comment = data.get('comment', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    issue_number = issue.get('number', '?')
+    title = issue.get('title', '제목 없음')
+    user = comment.get('user', {}).get('login', '알 수 없음')
+    html_url = comment.get('html_url', '')
 
     parsed_message = (
-        f" [Issue Comment 이벤트] \n"
-        f"레포지토리: {repo_name}\n"
-        f"액션: {action}\n"
-        f"이슈 번호: #{issue_number}\n"
-        f"댓글 작성자: {comment_user}\n"
-        f"내용: {comment_body}\n"
-        f"URL: {comment_url}"
+        f"💬 *Comment on #{issue_number}*\n"
+        f"*{repo_name}*\n"
+        f"{title}\n"
+        f"by {user}\n"
+        f"[댓글 보기]({html_url})"
     )
+
     return parsed_message
 
 
