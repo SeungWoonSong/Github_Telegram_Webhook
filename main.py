@@ -2,9 +2,62 @@ from flask import Flask, request, jsonify
 import requests
 from dotenv import load_dotenv
 import os
+import json
 
-# .env 파일에서 환경변수 로드
+# .env 파일 로드
 load_dotenv()
+
+# Telegram 설정
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_DEFAULT_CHAT_ID = os.getenv("TELEGRAM_DEFAULT_CHAT_ID")
+
+# 이벤트별 채팅방 매핑 로드
+EVENT_CHAT_MAPPING = {}
+event_mapping_str = os.getenv("EVENT_CHAT_MAPPING", "{}")
+try:
+    raw_mapping = json.loads(event_mapping_str)
+    # "event1,event2": "chat_id" 형식의 매핑을 개별 이벤트로 분리
+    for events, chat_id in raw_mapping.items():
+        for event in events.split(","):
+            EVENT_CHAT_MAPPING[event.strip()] = chat_id
+except json.JSONDecodeError:
+    print("Warning: Invalid EVENT_CHAT_MAPPING format in .env file")
+
+def get_chat_id_for_event(event_type):
+    """
+    주어진 이벤트 타입에 대한 채팅방 ID를 반환합니다.
+    매핑에 없는 경우 기본 채팅방 ID를 반환합니다.
+    """
+    return EVENT_CHAT_MAPPING.get(event_type, TELEGRAM_DEFAULT_CHAT_ID)
+
+def send_telegram_message(message, event_type):
+    """
+    텔레그램으로 메시지를 전송합니다.
+    이벤트 타입에 따라 적절한 채팅방으로 전송됩니다.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN not set")
+        return
+    
+    chat_id = get_chat_id_for_event(event_type)
+    if not chat_id:
+        print(f"Error: No chat ID configured for event type: {event_type}")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    
+    try:
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending message to Telegram: {e}")
+
 
 # Telegram Bot Token
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -1077,25 +1130,33 @@ def parse_other_event(event_type, data):
     return parsed_message
 
 
-def send_telegram_message(message, is_issue=False):
+def send_telegram_message(message, event_type):
     """
-    텔레그램으로 메시지를 전송하는 함수
-    
-    Args:
-        message (str): 전송할 메시지
-        is_issue (bool): Issue 관련 메시지인지 여부
+    텔레그램으로 메시지를 전송합니다.
+    이벤트 타입에 따라 적절한 채팅방으로 전송됩니다.
     """
-    chat_id = TELEGRAM_CHAT_ID if is_issue else TELEGRAM_WORK_CHAT_ID
-    if not chat_id:
+    if not TELEGRAM_BOT_TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN not set")
         return
-        
+    
+    chat_id = get_chat_id_for_event(event_type)
+    if not chat_id:
+        print(f"Error: No chat ID configured for event type: {event_type}")
+        return
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {
         "chat_id": chat_id,
         "text": message,
-        "parse_mode": "Markdown"
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     }
-    requests.post(url, json=data)
+    
+    try:
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending message to Telegram: {e}")
 
 
 app = Flask(__name__)
@@ -1201,9 +1262,8 @@ def webhook():
     message = parser(data) if event_type != "other" else parse_other_event(event_type, data)
     
     if message:
-        # 이슈 관련 이벤트인지 확인
-        is_issue = event_type in ISSUE_EVENTS
-        send_telegram_message(message, is_issue)
+        # 이벤트 타입에 따라 적절한 채팅방으로 메시지 전송
+        send_telegram_message(message, event_type)
         return jsonify({"status": "success", "message": message})
     
     return jsonify({"status": "ignored", "message": "Unsupported event or action"})
