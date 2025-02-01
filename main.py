@@ -1,27 +1,58 @@
-from flask import Flask, request, jsonify
-import requests
-from dotenv import load_dotenv
 import os
 import json
+import requests
+import logging
+import threading
+import time
+import asyncio
+from logging.handlers import RotatingFileHandler
+from flask import Flask, request, jsonify
+from telegram import Bot, Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.constants import ParseMode
+from dotenv import load_dotenv
+import sys
 
-# .env 파일 로드
+# 로깅 설정
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# 환경 변수 로드
 load_dotenv()
 
-# Telegram 설정
+# 환경 변수
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME")
 TELEGRAM_DEFAULT_CHAT_ID = os.getenv("TELEGRAM_DEFAULT_CHAT_ID")
+EVENT_CHAT_MAPPING = json.loads(os.getenv("EVENT_CHAT_MAPPING", "{}"))
+DEVELOPMENT_MODE = os.getenv("DEVELOPMENT", "true").lower() == "true"
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8080"))
+
+# 필수 환경변수 검증
+required_vars = {
+    "TELEGRAM_BOT_TOKEN": "봇 토큰",
+    "TELEGRAM_DEFAULT_CHAT_ID": "기본 채팅방 ID",
+    "TELEGRAM_BOT_USERNAME": "봇 사용자 이름"
+}
+
+missing_vars = [var for var, desc in required_vars.items() if not os.getenv(var)]
+if missing_vars:
+    missing_desc = ", ".join(f"{required_vars[var]}({var})" for var in missing_vars)
+    raise ValueError(f"다음 환경변수가 설정되어 있지 않습니다: {missing_desc}")
+
+# Telegram 설정
+SERVER_URL = os.getenv("SERVER_URL")
 
 # 이벤트별 채팅방 매핑 로드
-EVENT_CHAT_MAPPING = {}
-event_mapping_str = os.getenv("EVENT_CHAT_MAPPING", "{}")
 try:
-    raw_mapping = json.loads(event_mapping_str)
-    # "event1,event2": "chat_id" 형식의 매핑을 개별 이벤트로 분리
-    for events, chat_id in raw_mapping.items():
-        for event in events.split(","):
-            EVENT_CHAT_MAPPING[event.strip()] = chat_id
+    mapping = os.getenv("EVENT_CHAT_MAPPING", "{}")
+    EVENT_CHAT_MAPPING = json.loads(mapping)
 except json.JSONDecodeError:
-    print("Warning: Invalid EVENT_CHAT_MAPPING format in .env file")
+    logger.warning("Invalid EVENT_CHAT_MAPPING format in .env file")
+
 
 def get_chat_id_for_event(event_type):
     """
@@ -30,42 +61,136 @@ def get_chat_id_for_event(event_type):
     """
     return EVENT_CHAT_MAPPING.get(event_type, TELEGRAM_DEFAULT_CHAT_ID)
 
-def send_telegram_message(message, event_type):
+
+async def send_telegram_message(message, event_type):
     """
     텔레그램으로 메시지를 전송합니다.
     이벤트 타입에 따라 적절한 채팅방으로 전송됩니다.
     """
     if not TELEGRAM_BOT_TOKEN:
-        print("Error: TELEGRAM_BOT_TOKEN not set")
+        logger.error("Error: TELEGRAM_BOT_TOKEN not set")
         return
     
     chat_id = get_chat_id_for_event(event_type)
     if not chat_id:
-        print(f"Error: No chat ID configured for event type: {event_type}")
+        logger.error(f"Error: No chat ID configured for event type: {event_type}")
         return
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    
     try:
-        response = requests.post(url, json=data)
+        if application:
+            await application.bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
+            )
+        else:
+            logger.error("Error: Telegram application not initialized")
+    except Exception as e:
+        logger.error(f"Error sending message to Telegram: {e}")
+
+
+async def get_chat_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    현재 채팅방의 Chat ID를 반환하는 명령어 핸들러
+    """
+    chat = update.effective_chat
+    chat_id = chat.id
+    chat_type = chat.type
+    
+    logger.info(f"Received /get_chat_id command in chat {chat_id}")
+    group_info = (
+        f"🤖 안녕하세요! GitHub 알림 봇입니다.\n"
+        f"개발자: [Andrew Song](https://www.linkedin.com/in/sungwoonsong/)\n\n"
+        f"이 {chat_type}의 Chat ID 정보입니다:\n"
+        f"Chat ID: `{chat_id}`\n\n"
+        f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
+        f"1. 기본 채팅방으로 설정:\n"
+        f"`TELEGRAM_DEFAULT_CHAT_ID={chat_id}`\n\n"
+        f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
+        f"`EVENT_CHAT_MAPPING={{\\\"issues,issue_comment\\\": \\\"{chat_id}\\\"}}`"
+    )
+    
+    await update.message.reply_text(
+        text=group_info,
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=False  # 링크 미리보기 활성화
+    )
+
+
+async def start_bot():
+    """
+    텔레그램 봇을 초기화하고 시작합니다.
+    """
+    global application
+    
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Error: TELEGRAM_BOT_TOKEN not set")
+        return
+
+    try:
+        # 봇 초기화
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        
+        # 명령어 핸들러 등록
+        application.add_handler(CommandHandler("get_chat_id", get_chat_id_command))
+        
+        # 봇 시작
+        await application.initialize()
+        if not DEVELOPMENT_MODE:
+            # 프로덕션 모드에서는 웹훅 설정
+            webhook_url = f"https://your-domain.com/telegram-webhook"
+            await application.bot.set_webhook(url=webhook_url)
+        else:
+            # 개발 모드에서는 폴링 사용
+            await application.start()
+            logger.info("Development mode: Starting polling...")
+            await application.updater.start_polling()
+            
+    except Exception as e:
+        logger.error(f"Error starting Telegram bot: {e}")
+
+
+def get_telegram_updates():
+    """
+    텔레그램 업데이트를 폴링합니다.
+    개발 모드에서만 사용됩니다.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Error: TELEGRAM_BOT_TOKEN not set")
+        return
+        
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    try:
+        response = requests.get(url)
         response.raise_for_status()
+        updates = response.json()
+        
+        if updates.get("ok"):
+            for update in updates["result"]:
+                if "message" in update:
+                    message = update["message"]
+                    if "text" in message and message["text"] == "/get_chat_id":
+                        chat = message["chat"]
+                        chat_id = chat["id"]
+                        chat_type = chat["type"]
+                        
+                        logger.info(f"Received /get_chat_id command in chat {chat_id}")
+                        group_info = (
+                            f"🤖 안녕하세요! GitHub 알림 봇입니다.\n"
+                            f"개발자: [Andrew Song](https://www.linkedin.com/in/sungwoonsong/)\n\n"
+                            f"이 {chat_type}의 Chat ID 정보입니다:\n"
+                            f"Chat ID: `{chat_id}`\n\n"
+                            f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
+                            f"1. 기본 채팅방으로 설정:\n"
+                            f"`TELEGRAM_DEFAULT_CHAT_ID={chat_id}`\n\n"
+                            f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
+                            f"`EVENT_CHAT_MAPPING={{\\\"issues,issue_comment\\\": \\\"{chat_id}\\\"}}`"
+                        )
+                        asyncio.run(send_telegram_message(group_info, "bot_command"))
+                        
     except requests.exceptions.RequestException as e:
-        print(f"Error sending message to Telegram: {e}")
-
-
-# Telegram Bot Token
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # 수신할 채팅방 ID (봇과 대화 후 @get_id_bot 사용 가능)
-TELEGRAM_WORK_CHAT_ID = os.getenv("TELEGRAM_WORK_CHAT_ID")
-
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    raise ValueError("환경변수 TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID가 설정되어 있지 않습니다.")
+        logger.error(f"Error getting Telegram updates: {e}")
 
 
 def parse_push_event(data):
@@ -1130,33 +1255,84 @@ def parse_other_event(event_type, data):
     return parsed_message
 
 
-def send_telegram_message(message, event_type):
+def escape_markdown_v2(text):
     """
-    텔레그램으로 메시지를 전송합니다.
-    이벤트 타입에 따라 적절한 채팅방으로 전송됩니다.
+    MarkdownV2 포맷에서 사용되는 특수 문자를 이스케이프 처리합니다.
     """
-    if not TELEGRAM_BOT_TOKEN:
-        print("Error: TELEGRAM_BOT_TOKEN not set")
-        return
-    
-    chat_id = get_chat_id_for_event(event_type)
-    if not chat_id:
-        print(f"Error: No chat ID configured for event type: {event_type}")
-        return
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    data = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
+
+application = None
+
+async def telegram_webhook():
+    """
+    텔레그램 웹훅 엔드포인트
+    """
+    if request.method == 'POST':
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        
+        if not update:
+            return jsonify({"status": "error", "message": "No data received"})
+            
+        message = update.message
+        
+        # /get_chat_id 명령어 처리
+        if "text" in message and message.text == "/get_chat_id":
+            chat = message.chat
+            chat_id = chat.id
+            chat_type = chat.type
+            
+            logger.info(f"Received /get_chat_id command in chat {chat_id}")
+            group_info = (
+                f"🤖 안녕하세요! GitHub 알림 봇입니다.\n"
+                f"개발자: [Andrew Song](https://www.linkedin.com/in/sungwoonsong/)\n\n"
+                f"이 {chat_type}의 Chat ID 정보입니다:\n"
+                f"Chat ID: `{chat_id}`\n\n"
+                f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
+                f"1. 기본 채팅방으로 설정:\n"
+                f"`TELEGRAM_DEFAULT_CHAT_ID={chat_id}`\n\n"
+                f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
+                f"`EVENT_CHAT_MAPPING={{\\\"issues,issue_comment\\\": \\\"{chat_id}\\\"}}`"
+            )
+            await update.message.reply_text(
+                text=group_info,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=False  # 링크 미리보기 활성화
+            )
+            return jsonify({"status": "success"})
+        
+        # 새로운 멤버가 추가된 경우
+        if "new_chat_members" in message:
+            for new_member in message.new_chat_members:
+                if new_member.username == TELEGRAM_BOT_USERNAME:
+                    chat = message.chat
+                    chat_id = chat.id
+                    chat_type = chat.type
+                    
+                    # 그룹 정보 메시지 생성
+                    group_info = (
+                        f"🤖 안녕하세요! GitHub 알림 봇입니다.\n"
+                        f"개발자: [Andrew Song](https://www.linkedin.com/in/sungwoonsong/)\n\n"
+                        f"이 {chat_type}의 Chat ID는 `{chat_id}` 입니다.\n\n"
+                        f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
+                        f"1. 기본 채팅방으로 설정:\n"
+                        f"`TELEGRAM_DEFAULT_CHAT_ID={chat_id}`\n\n"
+                        f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
+                        f"`EVENT_CHAT_MAPPING={{\\\"issues,issue_comment\\\": \\\"{chat_id}\\\"}}`\n\n"
+                        f"언제든지 /get_chat_id 명령어를 입력하여 이 정보를 다시 볼 수 있습니다."
+                    )
+                    # 그룹에 메시지 전송
+                    await update.message.reply_text(
+                        text=group_info,
+                        parse_mode=ParseMode.MARKDOWN,
+                        disable_web_page_preview=False  # 링크 미리보기 활성화
+                    )
+                    return jsonify({"status": "success"})
     
-    try:
-        response = requests.post(url, json=data)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending message to Telegram: {e}")
+    return jsonify({"status": "ignored"})
 
 
 app = Flask(__name__)
@@ -1263,127 +1439,45 @@ def webhook():
     
     if message:
         # 이벤트 타입에 따라 적절한 채팅방으로 메시지 전송
-        send_telegram_message(message, event_type)
+        asyncio.run(send_telegram_message(message, event_type))
         return jsonify({"status": "success", "message": message})
     
     return jsonify({"status": "ignored", "message": "Unsupported event or action"})
 
-@app.route("/telegram-webhook", methods=["POST"])
-def telegram_webhook():
+@app.route('/telegram-webhook', methods=['POST'])
+async def telegram_webhook():
     """
     텔레그램 웹훅 엔드포인트
-    봇이 그룹에 초대되었을 때 해당 그룹의 Chat ID를 알려줍니다.
     """
-    data = request.json
-    
-    # 메시지가 없는 경우 무시
-    if not data or "message" not in data:
-        return jsonify({"status": "ignored"})
-    
-    message = data["message"]
-    chat = message.get("chat", {})
-    chat_id = chat.get("id")
-    chat_type = chat.get("type")
-    
-    # /get_chat_id 명령어 처리
-    if "text" in message and message["text"] == "/get_chat_id":
-        group_info = (
-            f"🤖 이 {chat_type}의 Chat ID 정보입니다:\n\n"
-            f"Chat ID: <code>{chat_id}</code>\n\n"
-            f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
-            f"1. 기본 채팅방으로 설정:\n"
-            f"<code>TELEGRAM_DEFAULT_CHAT_ID={chat_id}</code>\n\n"
-            f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
-            f"<code>EVENT_CHAT_MAPPING={{'\"issues,issue_comment\"': '\"{chat_id}\"'}}</code>"
-        )
-        send_telegram_message(group_info, "bot_command")
-        return jsonify({"status": "success"})
-    
-    # 새로운 멤버가 추가된 경우
-    if "new_chat_members" in message:
-        new_members = message["new_chat_members"]
-        # 봇이 새로 추가된 멤버인지 확인
-        for member in new_members:
-            if member.get("username") == TELEGRAM_BOT_USERNAME:
-                # 그룹 정보 메시지 생성
-                group_info = (
-                    f"🤖 안녕하세요! GitHub 알림 봇입니다.\n\n"
-                    f"이 {chat_type}의 Chat ID는 <code>{chat_id}</code> 입니다.\n\n"
-                    f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
-                    f"1. 기본 채팅방으로 설정:\n"
-                    f"<code>TELEGRAM_DEFAULT_CHAT_ID={chat_id}</code>\n\n"
-                    f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
-                    f"<code>EVENT_CHAT_MAPPING={{'\"issues,issue_comment\"': '\"{chat_id}\"'}}</code>\n\n"
-                    f"언제든지 /get_chat_id 명령어를 입력하여 이 정보를 다시 볼 수 있습니다."
-                )
-                # 그룹에 메시지 전송
-                send_telegram_message(group_info, "bot_added")
-                return jsonify({"status": "success"})
-    
-    return jsonify({"status": "ignored"})
+    if request.method == 'POST':
+        try:
+            update = Update.de_json(request.get_json(force=True), application.bot)
+            await application.process_update(update)
+            return jsonify({'status': 'ok'})
+        except Exception as e:
+            logger.error(f"Error processing Telegram webhook: {e}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
 
-def setup_telegram_webhook():
-    """
-    텔레그램 웹훅을 설정합니다.
-    서버 시작 시 자동으로 호출됩니다.
+if __name__ == '__main__':
+    # 봇 초기화
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
-    개발 환경을 위한 옵션:
-    1. DEVELOPMENT=true로 설정하면 웹훅 설정을 건너뜁니다.
-    2. 이 경우 봇이 새 채팅방에 추가되어도 자동으로 Chat ID를 알려주지 않습니다.
-    3. 대신 /get_chat_id 명령어를 통해 수동으로 Chat ID를 확인할 수 있습니다.
-    """
-    if not TELEGRAM_BOT_TOKEN:
-        print("Error: TELEGRAM_BOT_TOKEN not set")
-        return
-
-    # 개발 모드 확인
-    is_development = os.getenv("DEVELOPMENT", "false").lower() == "true"
+    # 봇 시작
+    loop.run_until_complete(start_bot())
     
-    # 봇 정보 가져오기
-    bot_info_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
-    try:
-        response = requests.get(bot_info_url)
-        response.raise_for_status()
-        bot_info = response.json()
-        if bot_info["ok"]:
-            global TELEGRAM_BOT_USERNAME
-            TELEGRAM_BOT_USERNAME = bot_info["result"]["username"]
-    except requests.exceptions.RequestException as e:
-        print(f"Error getting bot info: {e}")
-        return
-
-    if is_development:
-        print("Development mode: Skipping webhook setup")
-        print(f"You can use the /get_chat_id command in Telegram to get the chat ID")
-        return
-
-    # 웹훅 설정
-    webhook_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
-    server_url = os.getenv("SERVER_URL")
+    # Flask 앱 실행
+    def run_flask():
+        app.run(host='0.0.0.0', port=SERVER_PORT)
     
-    if not server_url:
-        print("Warning: SERVER_URL not set, skipping Telegram webhook setup")
-        print("You can use the /get_chat_id command in Telegram to get the chat ID")
-        return
-        
-    if not server_url.startswith("https://"):
-        print("Warning: SERVER_URL must use HTTPS. Telegram requires HTTPS for webhooks.")
-        print("Consider using a reverse proxy with HTTPS or ngrok for development.")
-        print("For now, you can use the /get_chat_id command in Telegram to get the chat ID")
-        return
-        
-    webhook_data = {
-        "url": f"{server_url}/telegram-webhook"
-    }
+    # Flask 앱을 별도 스레드에서 실행
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
     
     try:
-        response = requests.post(webhook_url, json=webhook_data)
-        response.raise_for_status()
-        print("Telegram webhook setup successful")
-    except requests.exceptions.RequestException as e:
-        print(f"Error setting up Telegram webhook: {e}")
-
-if __name__ == "__main__":
-    # 서버 시작 시 텔레그램 웹훅 설정
-    setup_telegram_webhook()
-    app.run(host="0.0.0.0", port=8080)
+        # 메인 이벤트 루프 실행
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
