@@ -1268,5 +1268,122 @@ def webhook():
     
     return jsonify({"status": "ignored", "message": "Unsupported event or action"})
 
+@app.route("/telegram-webhook", methods=["POST"])
+def telegram_webhook():
+    """
+    텔레그램 웹훅 엔드포인트
+    봇이 그룹에 초대되었을 때 해당 그룹의 Chat ID를 알려줍니다.
+    """
+    data = request.json
+    
+    # 메시지가 없는 경우 무시
+    if not data or "message" not in data:
+        return jsonify({"status": "ignored"})
+    
+    message = data["message"]
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
+    chat_type = chat.get("type")
+    
+    # /get_chat_id 명령어 처리
+    if "text" in message and message["text"] == "/get_chat_id":
+        group_info = (
+            f"🤖 이 {chat_type}의 Chat ID 정보입니다:\n\n"
+            f"Chat ID: <code>{chat_id}</code>\n\n"
+            f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
+            f"1. 기본 채팅방으로 설정:\n"
+            f"<code>TELEGRAM_DEFAULT_CHAT_ID={chat_id}</code>\n\n"
+            f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
+            f"<code>EVENT_CHAT_MAPPING={{'\"issues,issue_comment\"': '\"{chat_id}\"'}}</code>"
+        )
+        send_telegram_message(group_info, "bot_command")
+        return jsonify({"status": "success"})
+    
+    # 새로운 멤버가 추가된 경우
+    if "new_chat_members" in message:
+        new_members = message["new_chat_members"]
+        # 봇이 새로 추가된 멤버인지 확인
+        for member in new_members:
+            if member.get("username") == TELEGRAM_BOT_USERNAME:
+                # 그룹 정보 메시지 생성
+                group_info = (
+                    f"🤖 안녕하세요! GitHub 알림 봇입니다.\n\n"
+                    f"이 {chat_type}의 Chat ID는 <code>{chat_id}</code> 입니다.\n\n"
+                    f"이 ID를 .env 파일의 다음 설정에 사용할 수 있습니다:\n"
+                    f"1. 기본 채팅방으로 설정:\n"
+                    f"<code>TELEGRAM_DEFAULT_CHAT_ID={chat_id}</code>\n\n"
+                    f"2. 특정 이벤트 전용 채팅방으로 설정:\n"
+                    f"<code>EVENT_CHAT_MAPPING={{'\"issues,issue_comment\"': '\"{chat_id}\"'}}</code>\n\n"
+                    f"언제든지 /get_chat_id 명령어를 입력하여 이 정보를 다시 볼 수 있습니다."
+                )
+                # 그룹에 메시지 전송
+                send_telegram_message(group_info, "bot_added")
+                return jsonify({"status": "success"})
+    
+    return jsonify({"status": "ignored"})
+
+def setup_telegram_webhook():
+    """
+    텔레그램 웹훅을 설정합니다.
+    서버 시작 시 자동으로 호출됩니다.
+    
+    개발 환경을 위한 옵션:
+    1. DEVELOPMENT=true로 설정하면 웹훅 설정을 건너뜁니다.
+    2. 이 경우 봇이 새 채팅방에 추가되어도 자동으로 Chat ID를 알려주지 않습니다.
+    3. 대신 /get_chat_id 명령어를 통해 수동으로 Chat ID를 확인할 수 있습니다.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN not set")
+        return
+
+    # 개발 모드 확인
+    is_development = os.getenv("DEVELOPMENT", "false").lower() == "true"
+    
+    # 봇 정보 가져오기
+    bot_info_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+    try:
+        response = requests.get(bot_info_url)
+        response.raise_for_status()
+        bot_info = response.json()
+        if bot_info["ok"]:
+            global TELEGRAM_BOT_USERNAME
+            TELEGRAM_BOT_USERNAME = bot_info["result"]["username"]
+    except requests.exceptions.RequestException as e:
+        print(f"Error getting bot info: {e}")
+        return
+
+    if is_development:
+        print("Development mode: Skipping webhook setup")
+        print(f"You can use the /get_chat_id command in Telegram to get the chat ID")
+        return
+
+    # 웹훅 설정
+    webhook_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+    server_url = os.getenv("SERVER_URL")
+    
+    if not server_url:
+        print("Warning: SERVER_URL not set, skipping Telegram webhook setup")
+        print("You can use the /get_chat_id command in Telegram to get the chat ID")
+        return
+        
+    if not server_url.startswith("https://"):
+        print("Warning: SERVER_URL must use HTTPS. Telegram requires HTTPS for webhooks.")
+        print("Consider using a reverse proxy with HTTPS or ngrok for development.")
+        print("For now, you can use the /get_chat_id command in Telegram to get the chat ID")
+        return
+        
+    webhook_data = {
+        "url": f"{server_url}/telegram-webhook"
+    }
+    
+    try:
+        response = requests.post(webhook_url, json=webhook_data)
+        response.raise_for_status()
+        print("Telegram webhook setup successful")
+    except requests.exceptions.RequestException as e:
+        print(f"Error setting up Telegram webhook: {e}")
+
 if __name__ == "__main__":
+    # 서버 시작 시 텔레그램 웹훅 설정
+    setup_telegram_webhook()
     app.run(host="0.0.0.0", port=8080)
