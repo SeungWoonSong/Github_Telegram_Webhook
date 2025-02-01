@@ -146,7 +146,7 @@ def parse_issue_comment_event(data):
     html_url = comment.get('html_url', '')
 
     parsed_message = (
-        f"🗣️ *{issue_title}*\n"
+        f"🗣️ *{issue_title}의 댓글*\n"
         f"레포 : {repo_name}\n"
         f"작성자 : {user}\n"
         f"링크 : [댓글 보기]({html_url})"
@@ -230,6 +230,837 @@ def parse_pull_request_review_event(data):
     return parsed_message
 
 
+def parse_discussion_event(data):
+    """
+    Discussion 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 토론 생성 (💬)
+    - edited: 토론 수정 (📝)
+    - deleted: 토론 삭제 (🗑️)
+    - pinned: 토론 고정 (📌)
+    - unpinned: 토론 고정 해제 (📍)
+    - locked: 토론 잠금 (🔒)
+    - unlocked: 토론 잠금 해제 (🔓)
+    - transferred: 토론 이전 (↗️)
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    discussion = data.get('discussion', {})
+    
+    if action not in ['created', 'edited', 'deleted', 'pinned', 'unpinned', 'locked', 'unlocked', 'transferred']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    title = discussion.get('title', '제목 없음')
+    user = discussion.get('user', {}).get('login', '알 수 없음')
+    html_url = discussion.get('html_url', '')
+
+    action_emoji = {
+        'created': '💬',
+        'edited': '📝',
+        'deleted': '🗑️',
+        'pinned': '📌',
+        'unpinned': '📍',
+        'locked': '🔒',
+        'unlocked': '🔓',
+        'transferred': '↗️'
+    }.get(action, '')
+
+    parsed_message = (
+        f"{action_emoji} *{title}*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [토론 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_discussion_comment_event(data):
+    """
+    Discussion 댓글 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 댓글 생성
+    - edited: 댓글 수정
+    - deleted: 댓글 삭제
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    comment = data.get('comment', {})
+    discussion = data.get('discussion', {})
+    
+    if action not in ['created', 'edited', 'deleted']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    discussion_title = discussion.get('title', '제목 없음')
+    user = comment.get('user', {}).get('login', '알 수 없음')
+    html_url = comment.get('html_url', '')
+
+    action_emoji = {
+        'created': '💭',
+        'edited': '✏️',
+        'deleted': '🗑️'
+    }.get(action, '')
+
+    parsed_message = (
+        f"{action_emoji} *{discussion_title}의 댓글*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [댓글 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_branch_protection_rule_event(data):
+    """
+    Branch Protection Rule 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 규칙 생성
+    - edited: 규칙 수정
+    - deleted: 규칙 삭제
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    rule = data.get('rule', {})
+    
+    if action not in ['created', 'edited', 'deleted']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    pattern = rule.get('pattern', '알 수 없음')
+
+    action_emoji = {
+        'created': '🛡️',
+        'edited': '🔧',
+        'deleted': '🗑️'
+    }.get(action, '')
+
+    parsed_message = (
+        f"{action_emoji} *브랜치 보호 규칙 {action}*\n"
+        f"레포 : {repo_name}\n"
+        f"패턴 : {pattern}"
+    )
+
+    return parsed_message
+
+
+def parse_check_run_event(data):
+    """
+    Check Run 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - completed: 체크 완료
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    check_run = data.get('check_run', {})
+    
+    if action != 'completed':
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    name = check_run.get('name', '알 수 없음')
+    conclusion = check_run.get('conclusion', '알 수 없음')
+    html_url = check_run.get('html_url', '')
+
+    conclusion_emoji = {
+        'success': '✅',
+        'failure': '❌',
+        'neutral': '➖',
+        'cancelled': '🚫',
+        'skipped': '⏭️',
+        'timed_out': '⏰',
+        'action_required': '⚠️'
+    }.get(conclusion, '❓')
+
+    parsed_message = (
+        f"{conclusion_emoji} *{name}*\n"
+        f"레포 : {repo_name}\n"
+        f"결과 : {conclusion}\n"
+        f"링크 : [상세 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_code_scanning_alert_event(data):
+    """
+    Code Scanning Alert 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 알림 생성
+    - reopened: 알림 재오픈
+    - closed: 알림 닫힘
+    - fixed: 알림 해결
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    alert = data.get('alert', {})
+    
+    if action not in ['created', 'reopened', 'closed', 'fixed']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    rule = alert.get('rule', {})
+    rule_desc = rule.get('description', '알 수 없음')
+    html_url = alert.get('html_url', '')
+    severity = alert.get('severity', '알 수 없음')
+
+    action_emoji = {
+        'created': '🔍',
+        'reopened': '🔄',
+        'closed': '🔒',
+        'fixed': '✅'
+    }.get(action, '')
+
+    severity_emoji = {
+        'critical': '⚠️',
+        'high': '🔴',
+        'medium': '🟡',
+        'low': '🟢',
+        'warning': '💡',
+        'note': 'ℹ️'
+    }.get(severity.lower(), '❓')
+
+    parsed_message = (
+        f"{action_emoji} *코드 스캔 알림 {action}*\n"
+        f"{severity_emoji} 심각도: {severity}\n"
+        f"레포 : {repo_name}\n"
+        f"설명 : {rule_desc}\n"
+        f"링크 : [알림 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_dependabot_alert_event(data):
+    """
+    Dependabot Alert 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 알림 생성
+    - dismissed: 알림 무시
+    - fixed: 알림 해결
+    - reintroduced: 알림 재발생
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    alert = data.get('alert', {})
+    
+    if action not in ['created', 'dismissed', 'fixed', 'reintroduced']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    package_name = alert.get('dependency', {}).get('package', {}).get('name', '알 수 없음')
+    severity = alert.get('security_advisory', {}).get('severity', '알 수 없음')
+    html_url = alert.get('html_url', '')
+
+    action_emoji = {
+        'created': '🔍',
+        'dismissed': '🚫',
+        'fixed': '✅',
+        'reintroduced': '↩️'
+    }.get(action, '')
+
+    severity_emoji = {
+        'critical': '⚠️',
+        'high': '🔴',
+        'medium': '🟡',
+        'low': '🟢'
+    }.get(severity.lower(), '❓')
+
+    parsed_message = (
+        f"{action_emoji} *Dependabot 알림 {action}*\n"
+        f"{severity_emoji} 심각도: {severity}\n"
+        f"레포 : {repo_name}\n"
+        f"패키지 : {package_name}\n"
+        f"링크 : [알림 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_commit_comment_event(data):
+    """
+    Commit Comment 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 댓글 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    comment = data.get('comment', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    commit_id = comment.get('commit_id', '')[:7]  # Short SHA
+    user = comment.get('user', {}).get('login', '알 수 없음')
+    html_url = comment.get('html_url', '')
+
+    parsed_message = (
+        f"💬 *커밋 {commit_id}에 댓글이 추가됨*\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [댓글 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_create_delete_event(data, event_type):
+    """
+    Create/Delete 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        event_type (str): 'create' 또는 'delete'
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    ref_type = data.get('ref_type', '')  # branch or tag
+    ref = data.get('ref', '')  # The name of the branch or tag
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+
+    emoji = '🌱' if event_type == 'create' else '🗑️'
+    action = '생성됨' if event_type == 'create' else '삭제됨'
+    ref_type_kr = '브랜치' if ref_type == 'branch' else '태그'
+
+    parsed_message = (
+        f"{emoji} *{ref_type_kr} {action}*\n"
+        f"레포 : {repo_name}\n"
+        f"이름 : {ref}"
+    )
+
+    return parsed_message
+
+
+def parse_deployment_event(data):
+    """
+    Deployment 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    deployment = data.get('deployment', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    environment = deployment.get('environment', '알 수 없음')
+    creator = deployment.get('creator', {}).get('login', '알 수 없음')
+    ref = deployment.get('ref', '알 수 없음')
+
+    parsed_message = (
+        f"🚀 *새로운 배포*\n"
+        f"레포 : {repo_name}\n"
+        f"환경 : {environment}\n"
+        f"브랜치 : {ref}\n"
+        f"작성자 : {creator}"
+    )
+
+    return parsed_message
+
+
+def parse_deployment_status_event(data):
+    """
+    Deployment Status 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    deployment_status = data.get('deployment_status', {})
+    deployment = data.get('deployment', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    environment = deployment.get('environment', '알 수 없음')
+    state = deployment_status.get('state', '알 수 없음')
+    creator = deployment_status.get('creator', {}).get('login', '알 수 없음')
+
+    state_emoji = {
+        'success': '✅',
+        'failure': '❌',
+        'error': '⚠️',
+        'inactive': '💤',
+        'in_progress': '🔄',
+        'queued': '⏳',
+        'pending': '⏳'
+    }.get(state, '❓')
+
+    parsed_message = (
+        f"{state_emoji} *배포 상태 업데이트*\n"
+        f"레포 : {repo_name}\n"
+        f"환경 : {environment}\n"
+        f"상태 : {state}\n"
+        f"작성자 : {creator}"
+    )
+
+    return parsed_message
+
+
+def parse_fork_event(data):
+    """
+    Fork 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    forkee = data.get('forkee', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    fork_name = forkee.get('full_name', '알 수 없음')
+    fork_url = forkee.get('html_url', '')
+
+    parsed_message = (
+        f"🍴 *저장소가 포크됨*\n"
+        f"원본 : {repo_name}\n"
+        f"포크 : {fork_name}\n"
+        f"링크 : [포크 보기]({fork_url})"
+    )
+
+    return parsed_message
+
+
+def parse_repository_event(data):
+    """
+    Repository 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 저장소 생성
+    - deleted: 저장소 삭제
+    - archived: 저장소 보관
+    - unarchived: 저장소 보관 해제
+    - publicized: 저장소 공개
+    - privatized: 저장소 비공개
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    repo = data.get('repository', {})
+    
+    if action not in ['created', 'deleted', 'archived', 'unarchived', 'publicized', 'privatized']:
+        return None
+        
+    repo_name = repo.get('full_name', '알 수 없음')
+    html_url = repo.get('html_url', '')
+
+    action_emoji = {
+        'created': '📁',
+        'deleted': '🗑️',
+        'archived': '📦',
+        'unarchived': '📤',
+        'publicized': '🌍',
+        'privatized': '🔒'
+    }.get(action, '')
+
+    parsed_message = (
+        f"{action_emoji} *저장소 {action}*\n"
+        f"레포 : {repo_name}\n"
+        f"링크 : [저장소 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_gollum_event(data):
+    """
+    Wiki (Gollum) 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    pages = data.get('pages', [])
+    repo = data.get('repository', {})
+    
+    if not pages:
+        return None
+        
+    repo_name = repo.get('full_name', '알 수 없음')
+    
+    # 첫 번째 페이지 정보만 표시
+    page = pages[0]
+    page_name = page.get('title', '알 수 없음')
+    action = page.get('action', '알 수 없음')
+    html_url = page.get('html_url', '')
+    
+    remaining = len(pages) - 1
+    remaining_info = f"\n추가 페이지 {remaining}개" if remaining > 0 else ""
+
+    action_emoji = {
+        'created': '📝',
+        'edited': '✏️',
+        'deleted': '🗑️'
+    }.get(action, '📚')
+
+    parsed_message = (
+        f"{action_emoji} *Wiki 페이지 {action}*\n"
+        f"레포 : {repo_name}\n"
+        f"페이지 : {page_name}\n"
+        f"링크 : [Wiki 보기]({html_url}){remaining_info}"
+    )
+
+    return parsed_message
+
+
+def parse_pull_request_review_comment_event(data):
+    """
+    Pull Request Review Comment 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - created: 댓글 생성
+    - edited: 댓글 수정
+    - deleted: 댓글 삭제
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    comment = data.get('comment', {})
+    pull_request = data.get('pull_request', {})
+    
+    if action not in ['created', 'edited', 'deleted']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    pr_title = pull_request.get('title', '제목 없음')
+    user = comment.get('user', {}).get('login', '알 수 없음')
+    html_url = comment.get('html_url', '')
+
+    action_emoji = {
+        'created': '💭',
+        'edited': '✏️',
+        'deleted': '🗑️'
+    }.get(action, '')
+
+    parsed_message = (
+        f"{action_emoji} *PR 리뷰 댓글 {action}*\n"
+        f"PR : {pr_title}\n"
+        f"레포 : {repo_name}\n"
+        f"작성자 : {user}\n"
+        f"링크 : [댓글 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_branch_protection_configuration_event(data):
+    """
+    Branch Protection Configuration 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - edited: 설정 변경
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    changes = data.get('changes', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    protected_branch = data.get('branch', '알 수 없음')
+
+    parsed_message = (
+        f"🔧 *브랜치 보호 설정 변경*\n"
+        f"레포 : {repo_name}\n"
+        f"브랜치 : {protected_branch}"
+    )
+
+    return parsed_message
+
+
+def parse_check_suite_event(data):
+    """
+    Check Suite 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - completed: 체크 스위트 완료
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    check_suite = data.get('check_suite', {})
+    
+    if action != 'completed':
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    conclusion = check_suite.get('conclusion', '알 수 없음')
+    html_url = check_suite.get('html_url', '')
+
+    conclusion_emoji = {
+        'success': '✅',
+        'failure': '❌',
+        'neutral': '➖',
+        'cancelled': '🚫',
+        'skipped': '⏭️',
+        'timed_out': '⏰',
+        'action_required': '⚠️'
+    }.get(conclusion, '❓')
+
+    parsed_message = (
+        f"{conclusion_emoji} *체크 스위트 완료*\n"
+        f"레포 : {repo_name}\n"
+        f"결과 : {conclusion}\n"
+        f"링크 : [상세 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_deployment_protection_rule_event(data):
+    """
+    Deployment Protection Rule 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - requested: 배포 보호 규칙 검사 요청
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    environment = data.get('environment', {})
+    deployment = data.get('deployment', {})
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    env_name = environment.get('name', '알 수 없음')
+    ref = deployment.get('ref', '알 수 없음')
+
+    parsed_message = (
+        f"🛡️ *배포 보호 규칙 검사 요청*\n"
+        f"레포 : {repo_name}\n"
+        f"환경 : {env_name}\n"
+        f"브랜치 : {ref}"
+    )
+
+    return parsed_message
+
+
+def parse_deployment_review_event(data):
+    """
+    Deployment Review 이벤트 메시지 생성
+    
+    지원하는 액션:
+    - approved: 배포 승인
+    - rejected: 배포 거절
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    action = data.get('action', '')
+    deployment = data.get('deployment', {})
+    
+    if action not in ['approved', 'rejected']:
+        return None
+        
+    repo = data.get('repository', {})
+    repo_name = repo.get('full_name', '알 수 없음')
+    environment = deployment.get('environment', '알 수 없음')
+    reviewer = data.get('reviewer', {}).get('login', '알 수 없음')
+
+    action_emoji = {
+        'approved': '✅',
+        'rejected': '❌'
+    }.get(action, '')
+
+    action_kr = '승인됨' if action == 'approved' else '거절됨'
+
+    parsed_message = (
+        f"{action_emoji} *배포 {action_kr}*\n"
+        f"레포 : {repo_name}\n"
+        f"환경 : {environment}\n"
+        f"검토자 : {reviewer}"
+    )
+
+    return parsed_message
+
+
+def parse_public_event(data):
+    """
+    Public 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    repo = data.get('repository', {})
+    
+    repo_name = repo.get('full_name', '알 수 없음')
+    html_url = repo.get('html_url', '')
+
+    parsed_message = (
+        f"🌍 *저장소가 공개로 전환됨*\n"
+        f"레포 : {repo_name}\n"
+        f"링크 : [저장소 보기]({html_url})"
+    )
+
+    return parsed_message
+
+
+def parse_github_app_event(data, event_type):
+    """
+    GitHub App 관련 이벤트 메시지 생성
+    
+    Args:
+        data (dict): GitHub webhook 이벤트 데이터
+        event_type (str): 이벤트 타입 (authorization, installation, installation_repositories)
+        
+    Returns:
+        str: 포맷팅된 메시지
+    """
+    if event_type == 'github_app_authorization':
+        action = 'revoked'  # 항상 revoked
+        app = data.get('app', {})
+        app_name = app.get('name', '알 수 없음')
+        
+        parsed_message = (
+            f"🔒 *GitHub 앱 인증 해제*\n"
+            f"앱 : {app_name}"
+        )
+    
+    elif event_type == 'installation':
+        action = data.get('action', '')
+        installation = data.get('installation', {})
+        app = installation.get('app', {})
+        
+        if action not in ['created', 'deleted', 'suspend', 'unsuspend']:
+            return None
+            
+        app_name = app.get('name', '알 수 없음')
+        account = data.get('sender', {}).get('login', '알 수 없음')
+        
+        action_emoji = {
+            'created': '📥',
+            'deleted': '🗑️',
+            'suspend': '⏸️',
+            'unsuspend': '▶️'
+        }.get(action, '')
+        
+        action_kr = {
+            'created': '설치됨',
+            'deleted': '제거됨',
+            'suspend': '일시중지됨',
+            'unsuspend': '재개됨'
+        }.get(action, action)
+        
+        parsed_message = (
+            f"{action_emoji} *GitHub 앱 {action_kr}*\n"
+            f"앱 : {app_name}\n"
+            f"계정 : {account}"
+        )
+    
+    elif event_type == 'installation_repositories':
+        action = data.get('action', '')
+        installation = data.get('installation', {})
+        app = installation.get('app', {})
+        
+        if action not in ['added', 'removed']:
+            return None
+            
+        app_name = app.get('name', '알 수 없음')
+        repos_added = data.get('repositories_added', [])
+        repos_removed = data.get('repositories_removed', [])
+        
+        repos = repos_added if action == 'added' else repos_removed
+        repo_names = [repo.get('full_name', '') for repo in repos]
+        
+        action_emoji = '📥' if action == 'added' else '📤'
+        action_kr = '추가됨' if action == 'added' else '제거됨'
+        
+        parsed_message = (
+            f"{action_emoji} *GitHub 앱 저장소 {action_kr}*\n"
+            f"앱 : {app_name}\n"
+            f"저장소:\n" + '\n'.join(f"- {name}" for name in repo_names)
+        )
+    
+    else:
+        return None
+
+    return parsed_message
+
+
 def parse_other_event(event_type, data):
     """
     그 외 이벤트 타입에 대한 처리
@@ -269,6 +1100,61 @@ def send_telegram_message(message, is_issue=False):
 
 app = Flask(__name__)
 
+# 이벤트 타입별 파서 매핑
+EVENT_PARSERS = {
+    # 기본 이벤트
+    "ping": parse_ping_event,
+    "push": parse_push_event,
+    
+    # 브랜치 관련
+    "branch_protection_configuration": parse_branch_protection_configuration_event,
+    "branch_protection_rule": parse_branch_protection_rule_event,
+    
+    # CI/CD 및 체크
+    "check_run": parse_check_run_event,
+    "check_suite": parse_check_suite_event,
+    
+    # 코드 품질 및 보안
+    "code_scanning_alert": parse_code_scanning_alert_event,
+    "dependabot_alert": parse_dependabot_alert_event,
+    
+    # 커밋 및 변경사항
+    "commit_comment": parse_commit_comment_event,
+    "create": lambda data: parse_create_delete_event(data, "create"),
+    "delete": lambda data: parse_create_delete_event(data, "delete"),
+    
+    # 배포
+    "deployment": parse_deployment_event,
+    "deployment_status": parse_deployment_status_event,
+    "deployment_protection_rule": parse_deployment_protection_rule_event,
+    "deployment_review": parse_deployment_review_event,
+    
+    # 이슈 및 PR
+    "issues": parse_issues_event,
+    "issue_comment": parse_issue_comment_event,
+    "pull_request": parse_pull_request_event,
+    "pull_request_review": parse_pull_request_review_event,
+    "pull_request_review_comment": parse_pull_request_review_comment_event,
+    
+    # 리포지토리
+    "fork": parse_fork_event,
+    "repository": parse_repository_event,
+    "public": parse_public_event,
+    
+    # Wiki 및 Discussion
+    "gollum": parse_gollum_event,
+    "discussion": parse_discussion_event,
+    "discussion_comment": parse_discussion_comment_event,
+    
+    # GitHub 앱
+    "github_app_authorization": lambda data: parse_github_app_event(data, "github_app_authorization"),
+    "installation": lambda data: parse_github_app_event(data, "installation"),
+    "installation_repositories": lambda data: parse_github_app_event(data, "installation_repositories"),
+}
+
+# 이슈 관련 이벤트 (is_issue=True로 설정해야 하는 이벤트들)
+ISSUE_EVENTS = {"issues", "issue_comment"}
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     """
@@ -279,43 +1165,48 @@ def webhook():
     - push: 코드 푸시
     - pull_request: PR 생성/수정/닫힘
     - pull_request_review: PR 리뷰
+    - pull_request_review_comment: PR 리뷰 댓글
     - issues: 이슈 생성/수정/닫힘
     - issue_comment: 이슈 댓글
+    - discussion: 토론 생성/수정/삭제 등
+    - discussion_comment: 토론 댓글
+    - branch_protection_rule: 브랜치 보호 규칙
+    - branch_protection_configuration: 브랜치 보호 설정
+    - check_run: CI/CD 체크 실행
+    - check_suite: CI/CD 체크 스위트
+    - code_scanning_alert: 코드 스캔 알림
+    - dependabot_alert: Dependabot 알림
+    - commit_comment: 커밋 댓글
+    - create: 브랜치/태그 생성
+    - delete: 브랜치/태그 삭제
+    - deployment: 배포
+    - deployment_status: 배포 상태
+    - deployment_protection_rule: 배포 보호 규칙
+    - deployment_review: 배포 검토
+    - fork: 저장소 포크
+    - repository: 저장소 관련 이벤트
+    - public: 저장소 공개 전환
+    - gollum: Wiki 페이지 이벤트
+    - github_app_authorization: GitHub 앱 인증
+    - installation: GitHub 앱 설치
+    - installation_repositories: GitHub 앱 저장소
     """
     event_type = request.headers.get("X-GitHub-Event")
     data = request.json
 
-    if event_type == "ping":
-        message = parse_ping_event(data)
-        if message:
-            send_telegram_message(message)
-    elif event_type == "push":
-        message = parse_push_event(data)
-        if message:
-            send_telegram_message(message)
-    elif event_type == "pull_request":
-        message = parse_pull_request_event(data)
-        if message:
-            send_telegram_message(message)
-    elif event_type == "pull_request_review":
-        message = parse_pull_request_review_event(data)
-        if message:
-            send_telegram_message(message)
-    elif event_type == "issues":
-        message = parse_issues_event(data)
-        if message:
-            send_telegram_message(message, is_issue=True)
-    elif event_type == "issue_comment":
-        message = parse_issue_comment_event(data)
-        if message:
-            send_telegram_message(message, is_issue=True)
-    else:
-        message = parse_other_event(event_type, data)
-        if message:
-            send_telegram_message(message)
-
-    return jsonify({"status": "success"})
-
+    # 이벤트 타입에 따른 파서 함수 가져오기
+    parser = EVENT_PARSERS.get(event_type, parse_other_event)
+    
+    # 파서 함수 실행
+    message = parser(data) if event_type != "other" else parse_other_event(event_type, data)
+    
+    if message:
+        # 이슈 관련 이벤트인지 확인
+        is_issue = event_type in ISSUE_EVENTS
+        send_telegram_message(message, is_issue)
+        return jsonify({"status": "success", "message": message})
+    
+    return jsonify({"status": "ignored", "message": "Unsupported event or action"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
