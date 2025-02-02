@@ -150,10 +150,13 @@ def webhook():
             message = parser(payload)
             if message:
                 # 이벤트 타입에 따라 적절한 채팅방으로 메시지 전송
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
                 loop.run_until_complete(send_telegram_message(message, event_type))
-                loop.close()
                 return jsonify({"status": "success", "message": message})
 
         return jsonify({"status": "ignored", "message": "Unsupported event or action"})
