@@ -70,6 +70,8 @@ WORKFLOW_EVENTS = {"workflow_run", "workflow_job", "check_run", "check_suite"}
 
 # 이벤트 타입별 파서 매핑
 EVENT_PARSERS = {
+    # PING
+    "ping": parse_ping_event,
     # 기본 이벤트
     "push": parse_push_event,
     

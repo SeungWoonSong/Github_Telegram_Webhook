@@ -1,6 +1,28 @@
 from ..utils.markdown import escape_markdown_v2, truncate_text
 from ..config import logger
 
+def parse_ping_event(payload):
+    """GitHub ping 이벤트를 파싱하여 메시지를 생성합니다."""
+    try:
+        repository = payload.get("repository", {}).get("full_name", "")
+        hook_id = payload.get("hook_id", "")
+        zen = payload.get("zen", "")
+        hook_events = payload.get("hook", {}).get("events", [])
+        hook_url = payload.get("hook", {}).get("config", {}).get("url", "")
+        
+        message = f"🔔 *New Webhook Configured*\n"
+        message += f"*Repository:* `{repository}`\n"
+        message += f"*Hook ID:* `{hook_id}`\n"
+        message += f"*Events:* `{', '.join(hook_events)}`\n"
+        message += f"*Webhook URL:* `{hook_url}`\n"
+        message += f"\n_GitHub says: {zen}_"
+        
+        return message
+    except Exception as e:
+        logger.error(f"Error parsing ping event: {e}")
+        return None
+
+
 def parse_push_event(payload):
     """GitHub push 이벤트를 파싱하여 메시지를 생성합니다."""
     try:
