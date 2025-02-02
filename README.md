@@ -1,4 +1,4 @@
-# ChainChanger Bot
+# GitHub Notifier Telegram Bot
 
 GitHub 웹훅 이벤트를 Telegram으로 전송하는 봇입니다. 이슈, PR, 코드 리뷰 등 GitHub의 다양한 이벤트를 실시간으로 알림 받을 수 있습니다.
 
