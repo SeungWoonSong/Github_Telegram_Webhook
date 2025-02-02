@@ -6,6 +6,44 @@ GitHub 웹훅 이벤트를 Telegram으로 전송하는 봇입니다. 이슈, PR,
 
 ## 기능
 
+### 지원하는 GitHub 이벤트
+1. **코드 관련**
+   - Push
+   - Create/Delete (브랜치, 태그)
+   - Release
+   - Package
+
+2. **이슈 & PR**
+   - Issues (생성, 수정, 닫기)
+   - Issue Comments
+   - Pull Requests
+   - PR Reviews
+   - PR Review Comments
+
+3. **협업**
+   - Discussions
+   - Discussion Comments
+   - Wiki Pages (Gollum)
+   - Projects
+   - Project Cards/Columns
+
+4. **저장소 관리**
+   - Fork
+   - Star/Watch
+   - Member
+   - Team Add
+
+5. **CI/CD**
+   - Workflow Run/Job
+   - Check Run/Suite
+   - Deployment/Status
+
+6. **보안**
+   - Code Scanning Alert
+   - Secret Scanning Alert
+   - Dependabot Alert
+   - Repository Vulnerability Alert
+
 ### 1. Issue 관련 알림 (일반 채팅방)
 - 이슈 생성 🟢
 - 이슈 닫기 🔴
@@ -103,27 +141,43 @@ ChainChanger Bot is a bot that delivers GitHub repository events to Telegram cha
 
 ## Features
 
-### 1. Issue-related notifications (general chat room)
-- Issue creation 🟢
-- Issue closure 🔴
-- Issue reopening 🔄
-- Issue deletion 🗑️
-- Issue comments 🗣️
+### Supported GitHub Events
+1. **Code Related**
+   - Push
+   - Create/Delete (branches, tags)
+   - Release
+   - Package
 
-### 2. Development work-related notifications (work chat room)
-#### Pull Request
-- PR creation 💫
-- PR closure 🔒
-- PR reopening 🔄
+2. **Issues & PRs**
+   - Issues (creation, modification, closure)
+   - Issue Comments
+   - Pull Requests
+   - PR Reviews
+   - PR Review Comments
 
-#### Code Review
-- General comments 💭
-- Approval ✅
-- Request for changes ❌
-- Review withdrawal 🔄
+3. **Collaboration**
+   - Discussions
+   - Discussion Comments
+   - Wiki Pages (Gollum)
+   - Projects
+   - Project Cards/Columns
 
-#### Push
-- Code push 📦
+4. **Repository Management**
+   - Fork
+   - Star/Watch
+   - Member
+   - Team Add
+
+5. **CI/CD**
+   - Workflow Run/Job
+   - Check Run/Suite
+   - Deployment/Status
+
+6. **Security**
+   - Code Scanning Alert
+   - Secret Scanning Alert
+   - Dependabot Alert
+   - Repository Vulnerability Alert
 
 ## Configuration
 
