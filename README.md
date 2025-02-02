@@ -44,65 +44,28 @@ GitHub 웹훅 이벤트를 Telegram으로 전송하는 봇입니다. 이슈, PR,
    - Dependabot Alert
    - Repository Vulnerability Alert
 
-### 1. Issue 관련 알림 (일반 채팅방)
-- 이슈 생성 🟢
-- 이슈 닫기 🔴
-- 이슈 재열기 🔄
-- 이슈 삭제 🗑️
-- 이슈 댓글 🗣️
-
-### 2. 개발 작업 관련 알림 (작업용 채팅방)
-#### Pull Request
-- PR 생성 💫
-- PR 닫기 🔒
-- PR 재열기 🔄
-
-#### Code Review
-- 일반 코멘트 💭
-- 승인 ✅
-- 변경 요청 ❌
-- 리뷰 철회 🔄
-
-#### Push
-- 코드 푸시 📦
-
 ## 설정 방법
 
-### 1. 환경 변수 설정
-`.env` 파일에 다음 변수들을 설정해야 합니다:
-```env
-# Telegram 봇 설정
-TELEGRAM_BOT_TOKEN=your_bot_token        # Telegram Bot API 토큰
-TELEGRAM_BOT_USERNAME=your_bot_username  # @ 기호를 제외한 봇 사용자명
-TELEGRAM_DEFAULT_CHAT_ID=default_chat_id # 기본 채팅방 ID
-TELEGRAM_WORK_CHAT_ID=your_work_chat_id  # 작업용 채팅방 ID
+1. Telegram Bot Father(@BotFather)에게 문의해서 TELEGRAM_BOT_TOKEN 발급 받기
 
-# 이벤트별 채팅방 매핑 (선택사항)
-# 형식: {"이벤트_타입": "채팅방_ID"}
-# 예시: {"issues,issue_comment": "-1001111111111", "push,pull_request": "-1002222222222"}
-EVENT_CHAT_MAPPING={}
+2. 발급받을 때 사용한 이름 TELEGRAM_BOT_USERNAME, 그리고 발급 받은 TELEGRAM_BOT_TOKEN을 .env에 넣기
 
-# 서버 설정
-SERVER_PORT=8080       # 선택사항, 기본값: 8080
-DEVELOPMENT_MODE=false # 개발 모드 여부 (true: 웹훅 없이 테스트)
+3. `pip3 install -r requirements.txt`로 실행시킨 후, 이슈를 받아오기를 희망하는 채팅방에 봇을 초대 후 `/get_chat_id` 이용해서 chat id 받아오기
 
-# 서버 URL (선택사항)
-# 설정하지 않으면 서버의 외부 IP를 사용
-# 예시: your-domain.com 또는 subdomain.your-domain.com
-SERVER_URL=
-```
+4. 받아온 chat id를 .env의 TELEGRAM_DEFAULT_CHAT_ID에 설정하기
 
-### 2. GitHub Webhook 설정
+5. 만약 특정 이벤트는 다른 방으로 받고 싶다면 해당 방을 EVENT_CHAT_MAPPING에 매핑해두기
+
+6. 서버 재시작
+
+7. 필요시 테스트 파일을 이용해 테스트 진행하기 
+
+### GitHub Webhook 설정
 1. GitHub 저장소의 Settings > Webhooks로 이동
 2. Add webhook 클릭
-3. Payload URL에 봇 서버 주소 입력
+3. Payload URL에 `https://<your_domain or IP address>/webhook` 입력
 4. Content type을 `application/json`으로 설정
-5. 원하는 이벤트 선택:
-   - Issues
-   - Issue comments
-   - Pull requests
-   - Pull request reviews
-   - Pushes
+5. 원하는 이벤트 선택 후 저장
 
 ## 메시지 포맷
 
@@ -128,16 +91,15 @@ python main.py
 
 ## 주의사항
 
-- 이슈 관련 알림은 `TELEGRAM_DEFAULT_CHAT_ID`로 전송됩니다.
-- 개발 작업 관련 알림(PR, 리뷰, 푸시)은 `TELEGRAM_WORK_CHAT_ID`로 전송됩니다.
+- 기본적인 알림은 `TELEGRAM_DEFAULT_CHAT_ID`로 전송됩니다.
+- 매핑된 알람은 `EVENT_CHAT_MAPPING`에 매핑되어 있는 채팅방으로 전송됩니다.
 - 모든 환경 변수가 올바르게 설정되어 있는지 확인하세요.
 
 ---
 
 # English
 
-## Introduction
-ChainChanger Bot is a bot that delivers GitHub repository events to Telegram chat rooms. It enables real-time notification of various GitHub events such as issues, PRs, and code reviews.
+A bot that delivers GitHub webhook events to Telegram. You can receive real-time notifications for various GitHub events such as issues, PRs, and code reviews.
 
 ## Features
 
@@ -179,45 +141,30 @@ ChainChanger Bot is a bot that delivers GitHub repository events to Telegram cha
    - Dependabot Alert
    - Repository Vulnerability Alert
 
-## Configuration
+## Setup Instructions
 
-### 1. Environment variable setup
-Set the following variables in the `.env` file:
-```env
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=your_bot_token        # Telegram Bot API token
-TELEGRAM_BOT_USERNAME=your_bot_username  # Bot username without @ symbol
-TELEGRAM_DEFAULT_CHAT_ID=default_chat_id # Default chat room ID
-TELEGRAM_WORK_CHAT_ID=your_work_chat_id  # Work chat room ID
+1. Get TELEGRAM_BOT_TOKEN from Telegram Bot Father (@BotFather)
 
-# Event-specific chat room mapping (optional)
-# Format: {"event_type": "chat_id"}
-# Example: {"issues,issue_comment": "-1001111111111", "push,pull_request": "-1002222222222"}
-EVENT_CHAT_MAPPING={}
+2. Add the bot name used during creation as TELEGRAM_BOT_USERNAME and the received TELEGRAM_BOT_TOKEN to .env
 
-# Server Configuration
-SERVER_PORT=8080       # Optional, default: 8080
-DEVELOPMENT_MODE=false # Development mode flag
+3. Run `pip3 install -r requirements.txt`, invite the bot to the chat room where you want to receive issues, and use `/get_chat_id` to get the chat id
 
-# Server URL (optional)
-# External IP will be used if not set
-# Example: your-domain.com or subdomain.your-domain.com
-SERVER_URL=
-```
+4. Set the received chat id in TELEGRAM_DEFAULT_CHAT_ID in .env
 
-### 2. GitHub Webhook setup
+5. If you want to receive specific events in different rooms, map them in EVENT_CHAT_MAPPING
+
+6. Restart the server
+
+7. Run tests using the test files if needed
+
+### GitHub Webhook Setup
 1. Go to GitHub repository's Settings > Webhooks
 2. Click Add webhook
-3. Enter the bot server address in the Payload URL
-4. Set the Content type to `application/json`
-5. Select the desired events:
-   - Issues
-   - Issue comments
-   - Pull requests
-   - Pull request reviews
-   - Pushes
+3. Enter `https://<your_domain or IP address>/webhook` as Payload URL
+4. Set Content type to `application/json`
+5. Select desired events and save
 
-## Message format
+## Message Format
 
 All notifications are sent in the following consistent format:
 ```
@@ -227,7 +174,7 @@ Author/Reviewer: [User name]
 Link: [Link]
 ```
 
-## Running the bot
+## How to Run
 
 1. Install dependencies:
 ```bash
@@ -241,6 +188,6 @@ python main.py
 
 ## Notes
 
-- Issue-related notifications are sent to `TELEGRAM_DEFAULT_CHAT_ID`.
-- Development work-related notifications (PR, review, push) are sent to `TELEGRAM_WORK_CHAT_ID`.
-- Make sure all environment variables are set correctly.
+- Basic notifications are sent to `TELEGRAM_DEFAULT_CHAT_ID`
+- Mapped notifications are sent to chat rooms specified in `EVENT_CHAT_MAPPING`
+- Make sure all environment variables are set correctly
