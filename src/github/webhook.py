@@ -7,6 +7,7 @@ import asyncio
 from ..config import logger
 from ..bot.telegram_bot import send_telegram_message
 from .parsers import (
+    parse_ping_event,
     parse_push_event,
     parse_pull_request_event,
     parse_issues_event,
