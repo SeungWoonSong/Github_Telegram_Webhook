@@ -12,7 +12,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME")
 TELEGRAM_DEFAULT_CHAT_ID = os.getenv("TELEGRAM_DEFAULT_CHAT_ID")
 EVENT_CHAT_MAPPING = json.loads(os.getenv("EVENT_CHAT_MAPPING", "{}"))
-DEVELOPMENT_MODE = os.getenv("DEVELOPMENT", "true").lower() == "true"
+DEVELOPMENT_MODE = os.getenv("DEVELOPMENT_MODE", "true").lower() == "true"
 SERVER_PORT = int(os.getenv("SERVER_PORT", "8080"))
 
 # 필수 환경변수 검증
